@@ -110,3 +110,12 @@ export function doPolygonsIntersect (a, b) {
     }
     return true;
 }
+
+/**
+ * Parse a number to 2 decimal float.
+ * @param n number to parse
+ * @returns {Number} Number with 2 decimal place accuracy
+ */
+export function parse2Decimal (n) {
+    return Number(parseFloat(n).toFixed(2));
+}

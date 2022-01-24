@@ -45,6 +45,7 @@ export default {
       initialRelPos: {x: 0, y: 0},
       currentAbsPos: {x: 0, y: 0},
       currentRelPos: {x: 0, y: 0},
+      handleOffset: {x: 0, y: 0},
       selecting: false,
       moving: false,
       resizing: false,
@@ -105,6 +106,7 @@ export default {
       let isMrs = false;  // whether move/resize or not
       this.initialAbsPos = this.currentAbsPos = this.getMouseAbsPoint(e);
       this.initialRelPos = this.currentRelPos = this.getMouseRelPoint(e);
+      this.handleOffset = {x: e.offsetX, y: e.offsetY};
 
       if (e.target.dataset.container) {
         this.clearSelection();
@@ -124,14 +126,11 @@ export default {
       }
     },
     onMouseMove (e) {
-      const lastAbsX = this.currentAbsPos.x;
-      const lastAbsY = this.currentAbsPos.y;
-
       this.currentAbsPos = this.getMouseAbsPoint(e);
       this.currentRelPos = this.getMouseRelPoint(e);
 
-      let offX = this.currentAbsPos.x - lastAbsX;
-      let offY = this.currentAbsPos.y - lastAbsY;
+      let offX = this.currentAbsPos.x - this.initialAbsPos.x;
+      let offY = this.currentAbsPos.y - this.initialAbsPos.y;
 
       // console.log(this.getMouseRelPoint(e));
 
@@ -141,8 +140,6 @@ export default {
         });
       } else if (this.rotating) {
         // for rotation we need mouse offset from the begining of rotation (mouse down)
-        offX = this.currentAbsPos.x - this.initialAbsPos.x;
-        offY = this.currentAbsPos.y - this.initialAbsPos.y;
         this.selectedDomElements.map(item => {
           this.rotateElementBy(e, item.el, item.dom, offX, offY)
         });
@@ -182,61 +179,61 @@ export default {
     },
     moveElementBy (elm, domEl, offX, offY) {
       const elCompStyle = window.getComputedStyle(domEl);
-      let left = parseInt(elCompStyle.left) + Math.round(offX / this.zoom);
-      let top = parseInt(elCompStyle.top) + Math.round(offY / this.zoom);
+      let left = elm.x + Math.round(offX / this.zoom);
+      let top = elm.y + Math.round(offY / this.zoom);
       let width = parseInt(elCompStyle.width);
       let height = parseInt(elCompStyle.height);
       let snapped = this.snapToGrid5(left, top, width, height, elm.rotation);
       
-      this.currentAbsPos.x += snapped.x - left;
-      this.currentAbsPos.y += snapped.y - top;
-
       domEl.style.left = snapped.x + 'px'; 
       domEl.style.top =  snapped.y + 'px'; 
     },
     resizeElementBy (elm, domEl, offX, offY) {
-      const elCompStyle = window.getComputedStyle(domEl);
       var { rotation, minHeight, minWidth, fixedRatio } = elm;
-      let newHeight = parseFloat(elCompStyle.height);
-      let newWidth = parseFloat(elCompStyle.width);
-      let newTop = parseFloat(elCompStyle.top);
-      let newLeft = parseFloat(elCompStyle.left);
+      let newHeight = elm.height;
+      let newWidth = elm.width;
+      let newTop = elm.y;
+      let newLeft = elm.x;
       let center = {x: newLeft + newWidth/2, y: newTop+ newHeight/2};
       let diffW = 0, diffH = 0;
       let signW = 1, signH = 1;
 
       //offsets in real coordinates has to be transformed to relative rotated coordinates of element
       let relOffset = transformTo(offX, offY, rotation);
-      offX = relOffset.x;
-      offY = relOffset.y;
+      offX = Math.round(relOffset.x / this.zoom); // divide by zoom to get canvas space offset. so no need divide later
+      offY = Math.round(relOffset.y / this.zoom);
 
       if (fixedRatio) { // when fixed ratio, both offsets has to be equal in size
         if (this.handle == 'tr' || this.handle == 'bl') { // but sign has to be opposit on tr and bl corners
-          offX = Math.abs(offX) > Math.abs(offY) ? offX : -offY;
-          offY = Math.abs(offX) > Math.abs(offY) ? -offX : offY;
+          offX = (offX - offY)/2;
+          offY = -offX;
         } else {
-          offX = offY = Math.abs(offX) > Math.abs(offY) ? offX : offY;
+          offX = offY = (offX + offY)/2;
         }
       }
       // diffH & diffW are calculated as positive when dragging outwards
       if (this.handle.indexOf('t') !== -1) {  // resizing top side
+        if (rotation % 360 == 0) offY = this.offsetToSnap(offY, elm.y); // snap top edge
         if (newHeight - offY < minHeight) offY = (newHeight - minHeight);
-        diffH = -Math.round(offY / this.zoom);
+        diffH = -offY;
         signH = -1;   // new center should go up
       }
       else if (this.handle.indexOf('b') !== -1) {  // resizing bottom side
+        if (rotation % 360 == 0) offY = this.offsetToSnap(offY, elm.y + elm.height); // snap bottom edge
         if (newHeight + offY < minHeight) offY = (minHeight - newHeight);
-        diffH = Math.round(offY / this.zoom);
+        diffH = offY;
         signH = 1   // new center should go down
       }
       if (this.handle.indexOf('l') !== -1) {  // resizing left side
+        if (rotation % 360 == 0) offX = this.offsetToSnap(offX, elm.x); // snap left edge
         if (newWidth - offX < minWidth) offX = (newWidth - minWidth);
-        diffW = -Math.round(offX / this.zoom);
+        diffW = -offX;
         signW = -1   // new center should go left
       }
       else if (this.handle.indexOf('r') !== -1) {  // resizing right side
+        if (rotation % 360 == 0) offX = this.offsetToSnap(offX, elm.x + elm.width); // snap right edge
         if (newWidth + offX < minWidth) offX = (minWidth - newWidth);
-        diffW = Math.round(offX / this.zoom);
+        diffW = offX;
         signW = 1   // new center should go right
       }
       
@@ -246,10 +243,10 @@ export default {
       var newCenter = transformFrom(signW*diffW/2, signH*diffH/2, rotation).add(center);  //center has moved with new width,height
       var newLeftTop = newCenter.substract({x: newWidth/2, y: newHeight/2});  //new top-left corner according to new center
 
-      domEl.style.height = newHeight + 'px';
-      domEl.style.width = newWidth + 'px';
-      domEl.style.top = newLeftTop.y + 'px';
-      domEl.style.left = newLeftTop.x + 'px';
+      domEl.style.height = parseInt(newHeight) + 'px';
+      domEl.style.width = parseInt(newWidth) + 'px';
+      domEl.style.top = parseInt(newLeftTop.y) + 'px';
+      domEl.style.left = parseInt(newLeftTop.x) + 'px';
     },
     rotateElementBy (e, elm, domEl, offX, offY) {
       const elCompStyle = window.getComputedStyle(domEl);
@@ -322,6 +319,10 @@ export default {
           elm.active = true;
         }
       });
+    },
+    // snap a fixed + offset value and return the needed offset to snap
+    offsetToSnap (off, fixed) {
+      return this.snapToGrid1(fixed + off) - fixed;
     },
     snapToGrid1 (x) {
       var t = this.snapThreshold;

@@ -1,6 +1,6 @@
 <template>
   <div id="app">
-    <container :elements="elements" :snap-grid="true">
+    <container :elements="elements" :snap-grid="true" :zoom="1">
       <ft-element v-for="el in elements" v-slot:default="slotProps"
           :elem="el" 
           :active="el.active" 
